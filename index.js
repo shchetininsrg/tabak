@@ -1,7 +1,28 @@
 import { Telegraf, Markup } from "telegraf";
 import cron from "node-cron";
 import fs from "fs";
+import express from "express";
 
+// === Express app для обработки портов ===
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Health check endpoint
+app.get("/", (req, res) => {
+  res.status(200).json({ status: "OK", message: "Bot is running" });
+});
+
+// Health check для Render
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "healthy" });
+});
+
+// Запускаем Express сервер
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server is running on port ${PORT}`);
+});
+
+// === Инициализация бота ===
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
 // === Работа с базой (JSON) ===
@@ -61,15 +82,19 @@ cron.schedule("0 * * * *", () => {
     ).length;
 
     if (takenToday < plan.times) {
-      bot.telegram.sendMessage(
-        id,
-        `💊 Пора принять таблетку! (${takenToday + 1}/${plan.times})`,
-        {
-          reply_markup: Markup.inlineKeyboard([
-            Markup.button.callback("✅ Выпил", "taken"),
-          ]),
-        }
-      );
+      bot.telegram
+        .sendMessage(
+          id,
+          `💊 Пора принять таблетку! (${takenToday + 1}/${plan.times})`,
+          {
+            reply_markup: Markup.inlineKeyboard([
+              Markup.button.callback("✅ Выпил", "taken"),
+            ]),
+          }
+        )
+        .catch((error) => {
+          console.error(`Ошибка отправки сообщения пользователю ${id}:`, error);
+        });
     }
   }
 });
@@ -84,4 +109,29 @@ bot.action("taken", (ctx) => {
   ctx.editMessageText("✅ Таблетка отмечена как выпитая!");
 });
 
-bot.launch();
+// Обработка ошибок бота
+bot.catch((err, ctx) => {
+  console.error(`Ошибка для пользователя ${ctx.from?.id}:`, err);
+});
+
+// Запуск бота с обработкой ошибок
+bot
+  .launch()
+  .then(() => {
+    console.log("Bot started successfully");
+  })
+  .catch((error) => {
+    console.error("Failed to start bot:", error);
+    process.exit(1);
+  });
+
+// Graceful shutdown
+process.once("SIGINT", () => {
+  bot.stop("SIGINT");
+  process.exit(0);
+});
+
+process.once("SIGTERM", () => {
+  bot.stop("SIGTERM");
+  process.exit(0);
+});
