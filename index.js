@@ -1,47 +1,22 @@
 import { Telegraf, Markup } from "telegraf";
 import cron from "node-cron";
-import fs from "fs";
 import express from "express";
 
-// === Express app для обработки портов ===
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Health check endpoint
 app.get("/", (req, res) => {
-  res.status(200).json({ status: "OK", message: "Bot is running" });
+  res.status(200).json({ status: "OK" });
 });
 
-// Health check для Render
-app.get("/health", (req, res) => {
-  res.status(200).json({ status: "healthy" });
-});
-
-// Запускаем Express сервер
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
 
-// === Инициализация бота ===
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
-// === Работа с базой (JSON) ===
-const DB_FILE = "./users.json";
-
-// загружаем пользователей
+// === Временное хранилище в памяти (для демо) ===
 let users = {};
-if (fs.existsSync(DB_FILE)) {
-  try {
-    users = JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
-  } catch (e) {
-    console.error("Ошибка чтения users.json:", e);
-  }
-}
-
-// сохраняем пользователей
-function saveUsers() {
-  fs.writeFileSync(DB_FILE, JSON.stringify(users, null, 2));
-}
 
 // === Логика схемы ===
 function getPlan(day) {
@@ -57,8 +32,7 @@ function getPlan(day) {
 bot.start((ctx) => {
   const id = ctx.from.id;
   if (!users[id]) {
-    users[id] = { startDate: new Date(), takenToday: [] };
-    saveUsers();
+    users[id] = { startDate: new Date().toISOString(), takenToday: [] };
     ctx.reply(
       "👋 Привет! Я буду напоминать тебе пить таблетки по схеме. Сегодня день 1."
     );
@@ -101,37 +75,12 @@ cron.schedule("0 * * * *", () => {
 
 bot.action("taken", (ctx) => {
   const id = ctx.from.id;
-  if (!users[id]) users[id] = { startDate: new Date(), takenToday: [] };
+  if (!users[id])
+    users[id] = { startDate: new Date().toISOString(), takenToday: [] };
 
-  users[id].takenToday.push(new Date());
-  saveUsers();
+  users[id].takenToday.push(new Date().toISOString());
 
   ctx.editMessageText("✅ Таблетка отмечена как выпитая!");
 });
 
-// Обработка ошибок бота
-bot.catch((err, ctx) => {
-  console.error(`Ошибка для пользователя ${ctx.from?.id}:`, err);
-});
-
-// Запуск бота с обработкой ошибок
-bot
-  .launch()
-  .then(() => {
-    console.log("Bot started successfully");
-  })
-  .catch((error) => {
-    console.error("Failed to start bot:", error);
-    process.exit(1);
-  });
-
-// Graceful shutdown
-process.once("SIGINT", () => {
-  bot.stop("SIGINT");
-  process.exit(0);
-});
-
-process.once("SIGTERM", () => {
-  bot.stop("SIGTERM");
-  process.exit(0);
-});
+bot.launch();
